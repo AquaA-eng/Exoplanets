@@ -48,6 +48,8 @@ def closest_habitable(
 ):
     sql = """
         SELECT e.planet_name, s.star_name, s.distance_ly, e.radius_earth,
+               e.mass_earth, e.temp_kelvin, e.orbital_period_days, e.eccentricity,
+               s.star_temp_kelvin, s.star_type,
                m.method_name, e.discovery_year
         FROM exoplanets e
         JOIN stars s ON e.star_id = s.star_id
@@ -80,6 +82,8 @@ def search_planets(
 ):
     sql = """
         SELECT e.planet_name, s.star_name, s.distance_ly, e.radius_earth,
+               e.mass_earth, e.temp_kelvin, e.orbital_period_days, e.eccentricity,
+               s.star_temp_kelvin, s.star_type,
                m.method_name, e.discovery_year
         FROM exoplanets e
         JOIN stars s ON e.star_id = s.star_id
@@ -141,3 +145,77 @@ def most_planets(limit: int = Query(5)):
         LIMIT ?
     """
     return query_db(sql, (limit,))
+
+
+@app.get("/stats/avg-planets-per-star")
+def avg_planets_per_star():
+    sql = """
+        SELECT ROUND(AVG(planet_count), 2) as avg_planets_per_star
+        FROM (SELECT star_id, COUNT(*) as planet_count FROM exoplanets GROUP BY star_id)
+    """
+    return query_db(sql)[0]
+
+
+@app.get("/stats/single-vs-multi")
+def single_vs_multi():
+    sql = """
+        SELECT
+            SUM(CASE WHEN planet_count = 1 THEN 1 ELSE 0 END) as single_planet_systems,
+            SUM(CASE WHEN planet_count > 1 THEN 1 ELSE 0 END) as multi_planet_systems
+        FROM (SELECT star_id, COUNT(*) as planet_count FROM exoplanets GROUP BY star_id)
+    """
+    return query_db(sql)[0]
+
+
+@app.get("/stats/orbit-records")
+def orbit_records():
+    shortest = query_db("""
+        SELECT planet_name, orbital_period_days FROM exoplanets
+        WHERE orbital_period_days > 0 ORDER BY orbital_period_days ASC LIMIT 1
+    """)[0]
+    longest = query_db("""
+        SELECT planet_name, orbital_period_days FROM exoplanets
+        ORDER BY orbital_period_days DESC LIMIT 1
+    """)[0]
+    return {"shortest": shortest, "longest": longest}
+
+
+@app.get("/stats/orbits-under")
+def orbits_under(days: float = Query(10)):
+    sql = "SELECT COUNT(*) as count FROM exoplanets WHERE orbital_period_days > 0 AND orbital_period_days < ?"
+    return query_db(sql, (days,))[0]
+
+
+@app.get("/stats/by-year")
+def by_year():
+    sql = """
+        SELECT discovery_year, COUNT(*) as planet_count
+        FROM exoplanets GROUP BY discovery_year ORDER BY discovery_year ASC
+    """
+    return query_db(sql)
+
+
+@app.get("/stats/recent-methods")
+def recent_methods(years: int = Query(5)):
+    sql = """
+        SELECT m.method_name, COUNT(*) as planet_count
+        FROM exoplanets e JOIN discovery_methods m ON e.method_id = m.method_id
+        WHERE e.discovery_year >= (SELECT MAX(discovery_year) FROM exoplanets) - ?
+        GROUP BY m.method_name ORDER BY planet_count DESC
+    """
+    return query_db(sql, (years,))
+
+
+@app.get("/stats/avg-distance")
+def avg_distance():
+    return query_db("SELECT ROUND(AVG(distance_ly), 1) as avg_distance_ly FROM stars")[0]
+
+
+@app.get("/planets/beyond")
+def planets_beyond(min_distance: float = Query(1000)):
+    sql = """
+        SELECT COUNT(*) as count
+        FROM exoplanets e JOIN stars s ON e.star_id = s.star_id
+        WHERE s.distance_ly > ?
+    """
+    return query_db(sql, (min_distance,))[0]
