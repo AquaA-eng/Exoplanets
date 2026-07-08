@@ -1,4 +1,10 @@
 {
-  "builds": [{ "src": "api/index.py", "use": "@vercel/python" }],
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python",
+      "config": { "includeFiles": "nasa_exoplanets.db" }
+    }
+  ],
   "routes": [{ "src": "/(.*)", "dest": "api/index.py" }]
 }
